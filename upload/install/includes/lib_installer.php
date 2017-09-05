@@ -84,7 +84,8 @@ function get_system_info()
     $system_info[] = array($_LANG['php_ver'], PHP_VERSION);
 
     /* 检查MYSQL支持情况 */
-    $mysql_enabled = function_exists('mysql_connect') ? $_LANG['support'] : $_LANG['not_support'];
+    //$mysql_enabled = function_exists('mysql_connect') ? $_LANG['support'] : $_LANG['not_support'];
+    $mysql_enabled = function_exists('mysqli_connect') ? $_LANG['support'] : $_LANG['not_support'];
     $system_info[] = array($_LANG['does_support_mysql'], $mysql_enabled);
 
     /* 检查图片处理函数库 */
