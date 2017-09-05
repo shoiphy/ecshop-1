@@ -677,6 +677,7 @@ class cls_image
      */
     static function gd_version()
     {
+        // 适应php5.3以上版本 ，将function gd_version()改成static function gd_version()
         static $version = -1;
 
         if ($version >= 0)
