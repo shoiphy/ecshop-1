@@ -139,8 +139,8 @@ function get_system_info()
     $system_info[] = array($_LANG['does_support_dld'], $exists_info);
 
     /* 服务器是否安全模式开启 */
-    $safe_mode = ini_get('safe_mode') == '1' ? $_LANG['safe_mode_on'] : $_LANG['safe_mode_off'];
-    $system_info[] = array($_LANG['safe_mode'], $safe_mode);
+    //$safe_mode = ini_get('safe_mode') == '1' ? $_LANG['safe_mode_on'] : $_LANG['safe_mode_off'];
+    //$system_info[] = array($_LANG['safe_mode'], $safe_mode);
 
     return $system_info;
 }
