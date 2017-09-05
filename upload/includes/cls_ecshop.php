@@ -35,7 +35,12 @@ class ECS
      *
      * @return  void
      */
-    function ECS($db_name, $prefix)
+    //function ECS($db_name, $prefix)
+    //{
+    //    $this->db_name = $db_name;
+    //    $this->prefix  = $prefix;
+    //}
+    function __construct($db_name, $prefix)
     {
         $this->db_name = $db_name;
         $this->prefix  = $prefix;
