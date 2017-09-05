@@ -3,18 +3,23 @@
 /**
  * ECSHOP MYSQL 公用类库
  * ============================================================================
- * * 版权所有 2017 chinahaya，并保留所有权利。
- * 网站地址: http://www.chinahaya.com；
+ * * 版权所有 2005-2012 上海商派网络科技有限公司，并保留所有权利。
+ * 网站地址: http://www.ecshop.com；
+ * ----------------------------------------------------------------------------
+ * 这不是一个自由软件！您只能在不用于商业目的的前提下对程序代码进行修改和
+ * 使用；不允许对程序代码以任何形式任何目的的再发布。
  * ============================================================================
- * $Author: peter.lee $
- * $Id: cls_mysql.php
- * 因php7开始不支持mysql操作，改为更优化的mysqli操作，对以下文件进行修改，以适应php7
+ * $Author: liubo $
+ * $Id: cls_mysql.php 17217 2011-01-19 06:29:08Z liubo $
 */
 
-if (!defined('DITAN_ECS'))
+if (!defined('IN_ECS'))
 {
     die('Hacking attempt');
 }
+
+require __DIR__ . '/mysql.php7.php';
+
 
 class cls_mysql
 {
@@ -38,8 +43,6 @@ class cls_mysql
     var $starttime      = 0;
     var $timeline       = 0;
     var $timezone       = 0;
-    // 事务指令数
-    protected $transTimes = 0;
 
     var $mysql_config_cache_file_time = 0;
 
@@ -83,8 +86,7 @@ class cls_mysql
     {
         if ($pconnect)
         {
-            $this->link_id = new mysqli('p:'.$dbhost, $dbuser, $dbpw);
-            if ($this->link_id->connect_error)
+            if (!($this->link_id = @mysql_pconnect($dbhost, $dbuser, $dbpw)))
             {
                 if (!$quiet)
                 {
@@ -96,9 +98,17 @@ class cls_mysql
         }
         else
         {
-            $this->link_id = new mysqli($dbhost, $dbuser, $dbpw);
+            if (PHP_VERSION >= '4.2')
+            {
+                $this->link_id = @mysql_connect($dbhost, $dbuser, $dbpw, true);
+            }
+            else
+            {
+                $this->link_id = @mysql_connect($dbhost, $dbuser, $dbpw);
 
-            if ($this->link_id->connect_error)
+                mt_srand((double)microtime() * 1000000); // 对 PHP 4.2 以下的版本进行随机数函数的初始化工作
+            }
+            if (!$this->link_id)
             {
                 if (!$quiet)
                 {
@@ -110,12 +120,13 @@ class cls_mysql
         }
 
         $this->dbhash  = md5($this->root_path . $dbhost . $dbuser . $dbpw . $dbname);
-        $this->version = $this->link_id->server_version;
-
-        /* 对字符集进行初始化 */
-        $this->link_id->set_charset($charset);
         
-        $this->link_id->query("SET sql_mode=''");
+
+        /* 如果mysql 版本是 4.1+ 以上，需要对字符集进行初始化 */
+       	mysql_set_charset($charset, $this->link_id);
+	   	mysql_select_db($dbname, $this->link_id);
+		$this->version = mysql_get_server_info($this->link_id);
+
         $sqlcache_config_file = $this->root_path . $this->cache_data_dir . 'sqlcache_config_file_' . $this->dbhash . '.php';
 
         @include($sqlcache_config_file);
@@ -126,10 +137,9 @@ class cls_mysql
         {
             if ($dbhost != '.')
             {
-                $result = $this->link_id->query("SHOW VARIABLES LIKE 'basedir'");
-                $row = $result->fetch_array(MYSQLI_ASSOC);
-                $result->free();
-                if (!empty($row['Value']{1}) && $row['Value']{1} == ':' && !empty($row['Value']{2}) && $row['Value']{2} == "/")
+                $result = mysql_query("SHOW VARIABLES LIKE 'basedir'", $this->link_id);
+                $row    = mysql_fetch_assoc($result);
+                if (!empty($row['Value']{1}) && $row['Value']{1} == ':' && !empty($row['Value']{2}) && $row['Value']{2} == "\\")
                 {
                     $this->platform = 'WINDOWS';
                 }
@@ -145,16 +155,17 @@ class cls_mysql
 
             if ($this->platform == 'OTHER' &&
                 ($dbhost != '.' && strtolower($dbhost) != 'localhost:3306' && $dbhost != '127.0.0.1:3306') ||
-                date_default_timezone_get() == 'UTC')
+                (PHP_VERSION >= '5.1' && date_default_timezone_get() == 'UTC'))
             {
-                $result = $this->link_id->query("SELECT UNIX_TIMESTAMP() AS timeline, UNIX_TIMESTAMP('" . date('Y-m-d H:i:s', $this->starttime) . "') AS timezone");
-                $row = $result->fetch_array(MYSQLI_ASSOC);
-                $result->free();
+                $result = mysql_query("SELECT UNIX_TIMESTAMP() AS timeline, UNIX_TIMESTAMP('" . date('Y-m-d H:i:s', $this->starttime) . "') AS timezone", $this->link_id);
+                $row    = mysql_fetch_assoc($result);
+
                 if ($dbhost != '.' && strtolower($dbhost) != 'localhost:3306' && $dbhost != '127.0.0.1:3306')
                 {
                     $this->timeline = $this->starttime - $row['timeline'];
                 }
-                if (date_default_timezone_get() == 'UTC')
+
+                if (PHP_VERSION >= '5.1' && date_default_timezone_get() == 'UTC')
                 {
                     $this->timezone = $this->starttime - $row['timezone'];
                 }
@@ -170,48 +181,23 @@ class cls_mysql
         }
 
         /* 选择数据库 */
-        if ($dbname)
-        {
-            
-            if ($this->link_id->select_db($dbname) === false )
-            {
-                if (!$quiet)
-                {
-                    $this->ErrorMsg("Can't select MySQL database($dbname)!");
-                }
-
-                return false;
-            }
-            else
-            {
-                return true;
-            }
-        }
-        else
-        {
+       
             return true;
-        }
     }
 
     function select_database($dbname)
     {
-        return $this->link_id->select_db($dbname);
+        return mysql_select_db($dbname, $this->link_id);
     }
 
     function set_mysql_charset($charset)
     {
-        if (in_array(strtolower($charset), array('gbk', 'big5', 'utf-8', 'utf8')))
-        {
-            $charset = str_replace('-', '', $charset);
-        }
-        $this->link_id->set_charset($charset);
+       	mysql_set_charset($charset, $this->link_id);
     }
 
-    function fetch_array($query, $result_type = MYSQLI_ASSOC)
+    function fetch_array($query, $result_type = MYSQL_ASSOC)
     {
-        $row = $query->fetch_array($result_type);
-        $query->free();
-        return $row;
+        return mysql_fetch_array($query, $result_type);
     }
 
     function query($sql, $type = '')
@@ -222,7 +208,7 @@ class cls_mysql
             $this->settings = array();
         }
 
-        if ($this->queryCount++ <= 99)
+        if (defined('DB_QUERY_LOG'))
         {
             $this->queryLog[] = $sql;
         }
@@ -239,17 +225,17 @@ class cls_mysql
         }
 
         /* 当当前的时间大于类初始化时间的时候，自动执行 ping 这个自动重新连接操作 */
-        if (time() > $this->starttime + 1)
+        if (PHP_VERSION >= '4.3' && time() > $this->starttime + 1)
         {
-            $this->link_id->ping();
+            mysql_ping($this->link_id);
         }
 
-        if (!($query = $this->link_id->query($sql)) && $type != 'SILENT')
+        if (!($query = mysql_query($sql, $this->link_id)) && $type != 'SILENT')
         {
             $this->error_message[]['message'] = 'MySQL Query Error';
             $this->error_message[]['sql'] = $sql;
-            $this->error_message[]['error'] = $this->link_id->error;
-            $this->error_message[]['errno'] = $this->link_id->errno;
+            $this->error_message[]['error'] = mysql_error($this->link_id);
+            $this->error_message[]['errno'] = mysql_errno($this->link_id);
 
             $this->ErrorMsg();
 
@@ -281,55 +267,52 @@ class cls_mysql
 
     function affected_rows()
     {
-        return $this->link_id->affected_rows;
+        return mysql_affected_rows($this->link_id);
     }
 
     function error()
     {
-        return $this->link_id->error;
+        return mysql_error($this->link_id);
     }
 
     function errno()
     {
-        return $this->link_id->errno;
+        return mysql_errno($this->link_id);
     }
 
     function result($query, $row)
     {
-        $query->data_seek($row);
-        $result = $query->fetch_row();
-        $query->free();
-        return $result;
+        return @mysql_result($query, $row);
     }
 
     function num_rows($query)
     {
-        return $query->num_rows;
+        return mysql_num_rows($query);
     }
 
     function num_fields($query)
     {
-        return $this->link_id->field_count;
+        return mysql_num_fields($query);
     }
 
     function free_result($query)
     {
-        return $query->free();
+        return mysql_free_result($query);
     }
 
     function insert_id()
     {
-        return $this->link_id->insert_id;
+        return mysql_insert_id($this->link_id);
     }
 
     function fetchRow($query)
     {
-        return $query->fetch_assoc();
+        return mysql_fetch_assoc($query);
     }
 
     function fetch_fields($query)
     {
-        return $query->fetch_field();
+        return mysql_fetch_field($query);
     }
 
     function version()
@@ -339,24 +322,38 @@ class cls_mysql
 
     function ping()
     {
-        return $this->link_id->ping();
+        if (PHP_VERSION >= '4.3')
+        {
+            return mysql_ping($this->link_id);
+        }
+        else
+        {
+            return false;
+        }
     }
 
     function escape_string($unescaped_string)
     {
-        return $this->link_id->real_escape_string($unescaped_string);
+        if (PHP_VERSION >= '4.3')
+        {
+            return mysql_real_escape_string($unescaped_string);
+        }
+        else
+        {
+            return mysql_escape_string($unescaped_string);
+        }
     }
 
     function close()
     {
-        return $this->link_id->close();
+        return mysql_close($this->link_id);
     }
 
     function ErrorMsg($message = '', $sql = '')
     {
         if ($message)
         {
-            echo "<b>DTXB info</b>: $message\n\n<br /><br />";
+            echo "<b>ECSHOP info</b>: $message\n\n<br /><br />";
             //print('<a href="http://faq.comsenz.com/?type=mysql&dberrno=2003&dberror=Can%27t%20connect%20to%20MySQL%20server%20on" target="_blank">http://faq.comsenz.com/</a>');
         }
         else
@@ -394,8 +391,8 @@ class cls_mysql
         $res = $this->query($sql);
         if ($res !== false)
         {
-            $row = $res->fetch_row();
-            $res->free();
+            $row = mysql_fetch_row($res);
+
             if ($row !== false)
             {
                 return $row[0];
@@ -444,9 +441,13 @@ class cls_mysql
         $res = $this->query($sql);
         if ($res !== false)
         {
-            $arr = $res->fetch_all(MYSQLI_ASSOC);
-            $res->free();
-             return $arr;
+            $arr = array();
+            while ($row = mysql_fetch_assoc($res))
+            {
+                $arr[] = $row;
+            }
+
+            return $arr;
         }
         else
         {
@@ -490,9 +491,7 @@ class cls_mysql
         $res = $this->query($sql);
         if ($res !== false)
         {
-            $result = $res->fetch_assoc();
-            $res->free();
-            return $result;
+            return mysql_fetch_assoc($res);
         }
         else
         {
@@ -502,6 +501,8 @@ class cls_mysql
 
     function getRowCached($sql, $cached = 'FILEFIRST')
     {
+        $sql = trim($sql . ' LIMIT 1');
+
         $cachefirst = ($cached == 'FILEFIRST' || ($cached == 'MYSQLFIRST' && $this->platform != 'WINDOWS')) && $this->max_cache_time;
         if (!$cachefirst)
         {
@@ -532,11 +533,11 @@ class cls_mysql
         if ($res !== false)
         {
             $arr = array();
-            while ($row = $res->fetch_row())
+            while ($row = mysql_fetch_row($res))
             {
                 $arr[] = $row[0];
             }
-            $res->free();
+
             return $arr;
         }
         else
@@ -819,8 +820,9 @@ class cls_mysql
             {
                 $sql = "SHOW TABLE STATUS LIKE '" . trim($table) . "'";
             }
-            $result = $this->link_id->query($sql);
-            $row = $result->fetch_assoc();
+            $result = mysql_query($sql, $this->link_id);
+
+            $row = mysql_fetch_assoc($result);
             if ($row['Update_time'] > $lastupdatetime)
             {
                 $lastupdatetime = $row['Update_time'];
@@ -877,80 +879,6 @@ class cls_mysql
 
         array_unique($this->mysql_disable_cache_tables);
     }
-
-    
-    /**
-     +----------------------------------------------------------
-     * 启动事务
-     +----------------------------------------------------------
-     * @access public
-     +----------------------------------------------------------
-     * @return void
-     +----------------------------------------------------------
-     */
-    public function startTrans() {
-        //$this->initConnect(true);
-        if ( !$this->link_id ) return false;
-        //数据rollback 支持
-        if ($this->transTimes == 0) {
-            $this->link_id->autocommit(FALSE);
-        }
-        $this->transTimes++;
-        return ;
-    }
-    
-    /**
-     +----------------------------------------------------------
-     * 用于非自动提交状态下面的查询提交
-     +----------------------------------------------------------
-     * @access public
-     +----------------------------------------------------------
-     * @return boolen
-     +----------------------------------------------------------
-     */
-    public function commit()
-    {
-        if ($this->transTimes > 0) {
-            $result = $this->link_id->commit();
-            $this->transTimes = 0;
-            if(!$result){
-                $this->error_message[]['message'] = 'MySQL Query Error';
-                $this->error_message[]['sql'] = $sql;
-                $this->error_message[]['error'] = $this->link_id->error;
-                $this->error_message[]['errno'] = $this->link_id->errno;
-                $this->ErrorMsg();
-                return false;
-            }
-        }
-        return true;
-    }
-    
-    /**
-     +----------------------------------------------------------
-     * 事务回滚
-     +----------------------------------------------------------
-     * @access public
-     +----------------------------------------------------------
-     * @return boolen
-     +----------------------------------------------------------
-     */
-    public function rollback()
-    {
-        if ($this->transTimes > 0) {
-            $result = $this->link_id->rollback();
-            $this->transTimes = 0;
-            if(!$result){
-                $this->error_message[]['message'] = 'MySQL Query Error';
-                $this->error_message[]['sql'] = $sql;
-                $this->error_message[]['error'] = $this->link_id->error;
-                $this->error_message[]['errno'] = $this->link_id->errno;
-                $this->ErrorMsg();
-                return false;
-            }
-        }
-        return true;
-    }
-    
 }
 
 ?>
