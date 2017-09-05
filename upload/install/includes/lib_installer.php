@@ -223,7 +223,8 @@ function get_local_timezone()
 {
     if (PHP_VERSION >= '5.1')
     {
-        $local_timezone = date_default_timezone_get();
+        $local_timezone = date_default_timezone_set('PRC');
+        
     }
     else
     {
